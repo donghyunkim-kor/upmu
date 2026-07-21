@@ -13,9 +13,7 @@ BASE_DATA_DIR = "uploaded_data"
 BID_DIR = os.path.join(BASE_DATA_DIR, "bids")
 ENG_DIR = os.path.join(BASE_DATA_DIR, "engineer")
 PERF_DIR = os.path.join(BASE_DATA_DIR, "performance")
-CONTRACT_DIR = os.path.join(
-    BASE_DATA_DIR, "contract"
-)  # 계약관리 폴더 추가
+CONTRACT_DIR = os.path.join(BASE_DATA_DIR, "contract")
 
 for d in [BID_DIR, ENG_DIR, PERF_DIR, CONTRACT_DIR]:
   os.makedirs(d, exist_ok=True)
@@ -39,8 +37,49 @@ def delete_saved_file(file_path):
   return False
 
 
+# 🌟 테이블 출력 전용 데이터 포맷팅 함수 (날짜 시간 제거, 숫자 쉼표, None 빈칸 처리)
+def clean_display_dataframe(df):
+  df_formatted = df.copy()
+  for col in df_formatted.columns:
+    col_str = str(col)
+    # 1. 날짜 관련 컬럼 (시간 제거)
+    if (
+        "일" in col_str
+        or "일자" in col_str
+        or pd.api.types.is_datetime64_any_dtype(df_formatted[col])
+    ):
+      df_formatted[col] = pd.to_datetime(
+          df_formatted[col], errors="coerce"
+      ).dt.strftime("%Y-%m-%d")
+      df_formatted[col] = df_formatted[col].fillna("")
+    else:
+      # 2. 숫자형 데이터 컬럼 (1,000단위 쉼표 추가)
+      numeric_series = pd.to_numeric(df_formatted[col], errors="coerce")
+      # 단, 연도나 순번 같은 컬럼(예: 4자릿수 정수 연도 등)은 금액이나 지수형태가 아닐 수 있으므로 실수/금액성 컬럼 위주로 처리
+      if numeric_series.notna().sum() > 0 and not any(
+          k in col_str for k in ["연도", "년도", "차수"]
+      ):
+        df_formatted[col] = numeric_series.apply(
+            lambda x: f"{x:,.0f}"
+            if pd.notna(x) and x == int(x)
+            else (f"{x:,.2f}" if pd.notna(x) else "")
+        )
+      else:
+        # 3. 텍스트 컬럼의 None, NaN, 'none', 'nan' -> 완벽한 빈칸("")으로 치환
+        df_formatted[col] = (
+            df_formatted[col]
+            .astype(str)
+            .str.replace(r"(?i)^(none|nan|nat)$", "", regex=True)
+            .str.strip()
+        )
+        df_formatted[col] = df_formatted[col].replace(
+            {"nan": "", "None": "", "NONE": "", "": ""}
+        )
+  return df_formatted.fillna("")
+
+
 # ---------------------------------------------------------
-# OZ Report 입찰명 완벽 일치 파서 (실제 엑셀 컬럼 매핑)
+# OZ Report 입찰명 완벽 일치 파서
 # ---------------------------------------------------------
 def parse_oz_report_4schedules(file_path):
   raw_df = pd.read_excel(file_path, header=None)
@@ -74,12 +113,10 @@ def parse_oz_report_4schedules(file_path):
 
   for idx in range(len(raw_df)):
     row = raw_df.iloc[idx]
-
     if len(row) <= title_col or pd.isna(row.iloc[title_col]):
       continue
 
     raw_title = str(row.iloc[title_col]).strip()
-
     if (
         "공사명" in raw_title
         or "입찰일정" in raw_title
@@ -135,7 +172,7 @@ def parse_oz_report_4schedules(file_path):
 
 st.title("🏗️ 건설 입찰 및 경력/실적/계약 통합 관리 시스템")
 
-# 탭 구성에 계약관리(tab4) 추가
+# 탭 구성
 tab1, tab2, tab3, tab4 = st.tabs(
     ["📅 입찰 달력", "👷 경력기술자 조건 검색", "🏢 준공실적 검색", "🏗️ 계약 관리"]
 )
@@ -235,7 +272,7 @@ with tab1:
         .fc-daygrid-day-frame { min-height: 85px !important; }
     """
 
-  state = calendar(
+  calendar(
       events=bid_events, options=calendar_options, custom_css=custom_css, key="bid_calendar"
   )
 
@@ -448,7 +485,7 @@ with tab3:
       st.dataframe(filtered_perf, use_container_width=True)
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (추가된 정식 메뉴)
+# [TAB 4] 계약 관리 (날짜 시간 제거, 숫자 쉼표, None 빈칸 처리 적용)
 # ---------------------------------------------------------
 with tab4:
   st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
@@ -500,7 +537,6 @@ with tab4:
         df_contract = None
 
       if df_contract is not None:
-        # 컬럼명 공백 제거
         df_contract.columns = df_contract.columns.str.strip()
 
         if "계약명" in df_contract.columns:
@@ -529,7 +565,6 @@ with tab4:
                 first_row["지분율"]
             ):
               try:
-                # 퍼센트 기호나 소수점 형태 대응
                 val = str(first_row["지분율"]).replace("%", "").strip()
                 share_ratio = float(val)
                 if share_ratio > 1:
@@ -537,7 +572,6 @@ with tab4:
               except:
                 share_ratio = 1.0
 
-            # 금액 집계 로직
             total_contract_amount = 0
             my_contract_amount = 0
 
@@ -574,7 +608,10 @@ with tab4:
 
             st.markdown("---")
 
-            # 상세 타임라인 테이블
+            # 🌟 포맷 적용된 데이터프레임 생성 (시간 제거, 쉼표 추가, None 제거)
+            clean_sub_df = clean_display_dataframe(sub_df)
+
+            # 상세 타임라인 테이블 출력
             st.markdown("#### 📋 상세 계약 및 변경 내역 (타임라인)")
             display_cols = [
                 "종류",
@@ -590,18 +627,18 @@ with tab4:
                 "착공일",
                 "준공일",
             ]
-            actual_cols = [c for c in display_cols if c in sub_df.columns]
-            st.dataframe(sub_df[actual_cols], use_container_width=True)
+            actual_cols = [c for c in display_cols if c in clean_sub_df.columns]
+            st.dataframe(clean_sub_df[actual_cols], use_container_width=True)
 
-            # 차수별 요약 브리핑
+            # 차수별 요약 브리핑 테이블 출력
             st.markdown("#### 🔍 차수 및 증감 계약 요약 브리핑")
             summary_view_cols = [
                 c
                 for c in ["종류", "내용", "계약일(낙찰)", my_col, "특이사항"]
-                if c in sub_df.columns
+                if c in clean_sub_df.columns
             ]
             if summary_view_cols:
-              st.table(sub_df[summary_view_cols].fillna("-"))
+              st.table(clean_sub_df[summary_view_cols])
 
         else:
           st.error(
