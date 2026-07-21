@@ -11,14 +11,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# 폴더 설정
+# 폴더 설정 (기타 탭용)
 BASE_DATA_DIR = "uploaded_data"
 BID_DIR = os.path.join(BASE_DATA_DIR, "bids")
 ENG_DIR = os.path.join(BASE_DATA_DIR, "engineer")
 PERF_DIR = os.path.join(BASE_DATA_DIR, "performance")
-CONTRACT_DIR = os.path.join(BASE_DATA_DIR, "contract")
 
-for d in [BID_DIR, ENG_DIR, PERF_DIR, CONTRACT_DIR]:
+for d in [BID_DIR, ENG_DIR, PERF_DIR]:
     os.makedirs(d, exist_ok=True)
 
 
@@ -160,9 +159,6 @@ with tab1:
             save_uploaded_file(uploaded_bid, BID_DIR)
             st.success(f"✅ '{uploaded_bid.name}' 업로드 완료!")
             st.cache_data.clear()
-            for key in ["bid_select", "bid_calendar"]:
-                if key in st.session_state:
-                    del st.session_state[key]
             st.rerun()
 
     saved_bid_files = get_saved_files(BID_DIR)
@@ -174,14 +170,11 @@ with tab1:
                 file_path_to_del = os.path.join(BID_DIR, selected_bid_file)
                 if delete_saved_file(file_path_to_del):
                     st.cache_data.clear()
-                    for key in ["bid_select", "bid_uploader", "bid_calendar"]:
-                        if key in st.session_state:
-                            del st.session_state[key]
                     st.success(f"🗑️ '{selected_bid_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
             selected_bid_file = None
-            st.info("💡 왼쪽에 OZ Report 엑셀 파일을 업로드해 주세요.")
+            st.info("💡 입찰 엑셀 파일을 업로드해 주세요.")
 
     st.markdown("---")
     bid_events = []
@@ -214,8 +207,6 @@ with tab2:
             save_uploaded_file(uploaded_eng, ENG_DIR)
             st.success(f"✅ '{uploaded_eng.name}' 경력 파일 저장 완료!")
             st.cache_data.clear()
-            if "eng_select" in st.session_state:
-                del st.session_state["eng_select"]
             st.rerun()
 
     saved_eng_files = get_saved_files(ENG_DIR)
@@ -226,14 +217,11 @@ with tab2:
                 file_path_to_del = os.path.join(ENG_DIR, selected_eng_file)
                 if delete_saved_file(file_path_to_del):
                     st.cache_data.clear()
-                    for key in ["eng_select", "eng_uploader"]:
-                        if key in st.session_state:
-                            del st.session_state[key]
                     st.success(f"🗑️ '{selected_eng_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
             selected_eng_file = None
-            st.info("💡 왼쪽에 경력 엑셀 파일을 업로드해 주세요.")
+            st.info("💡 경력 엑셀 파일을 업로드해 주세요.")
 
     st.markdown("---")
     if selected_eng_file and selected_eng_file in saved_eng_files:
@@ -309,155 +297,140 @@ with tab3:
             st.dataframe(filtered_perf, use_container_width=True)
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (낙찰, 총괄만 합산 및 차수 잔여계약금액 계산 로직 적용)
+# [TAB 4] 계약 관리 (고정 경로 다이렉트 자동 로드 적용)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
 
-    col_up_c, col_sel_c = st.columns([1, 1])
-    with col_up_c:
-        uploaded_contract = st.file_uploader("계약관리 엑셀 파일(.xlsx) 업로드", type=["xlsx"], key="contract_uploader")
-        if uploaded_contract is not None:
-            save_uploaded_file(uploaded_contract, CONTRACT_DIR)
-            st.success(f"✅ '{uploaded_contract.name}' 계약 파일 저장 완료!")
-            st.cache_data.clear()
-            if "contract_select" in st.session_state:
-                del st.session_state["contract_select"]
-            st.rerun()
+    # 🌟 지정하신 고정 경로 및 파일명
+    FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
 
-    saved_contract_files = get_saved_files(CONTRACT_DIR)
-    with col_sel_c:
-        if saved_contract_files:
-            selected_contract_file = st.selectbox("📁 계약 파일 목록 선택", saved_contract_files, key="contract_select")
-            if st.button("🗑️ 선택한 계약 파일 삭제", key="del_contract"):
-                file_path_to_del = os.path.join(CONTRACT_DIR, selected_contract_file)
-                if delete_saved_file(file_path_to_del):
-                    st.cache_data.clear()
-                    for key in ["contract_select", "contract_uploader"]:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
-        else:
-            selected_contract_file = None
-            st.info("💡 왼쪽에 계약관리 엑셀 파일을 업로드해 주세요.")
+    # 파일 상태 안내 및 새로고침(캐시 클리어) 버튼 제공
+    col_info, col_btn = st.columns([3, 1])
+    with col_info:
+        st.info(f"📁 지정된 고정 경로 파일 연동중: `{FIXED_CONTRACT_PATH}`")
+    with col_btn:
+        if st.button("🔄 파일 새로고침", key="refresh_contract"):
+            st.cache_data.clear()
+            st.rerun()
 
     st.markdown("---")
 
-    if selected_contract_file and selected_contract_file in saved_contract_files:
-        file_path = os.path.join(CONTRACT_DIR, selected_contract_file)
-        if os.path.exists(file_path):
-            try:
-                df_contract = pd.read_excel(file_path, sheet_name="계약입력")
-            except Exception as e:
-                st.error(f"시트 읽기 오류: {e}")
-                df_contract = None
+    if os.path.exists(FIXED_CONTRACT_PATH):
+        try:
+            df_contract = pd.read_excel(FIXED_CONTRACT_PATH, sheet_name="계약입력")
+        except Exception as e:
+            st.error(f"시트 읽기 오류 ('계약입력' 시트가 있는지 확인해주세요): {e}")
+            df_contract = None
 
-            if df_contract is not None:
-                df_contract.columns = df_contract.columns.str.strip()
+        if df_contract is not None:
+            df_contract.columns = df_contract.columns.str.strip()
 
-                if "계약명" in df_contract.columns:
-                    contract_list = df_contract["계약명"].dropna().unique().tolist()
-                    selected_contract = st.selectbox("🎯 조회할 계약(공사)을 선택하세요:", contract_list, key="selected_contract_box")
+            if "계약명" in df_contract.columns:
+                contract_list = df_contract["계약명"].dropna().unique().tolist()
+                selected_contract = st.selectbox("🎯 조회할 계약(공사)을 선택하세요:", contract_list, key="selected_contract_box")
 
-                    if selected_contract:
-                        sub_df = df_contract[df_contract["계약명"] == selected_contract].copy()
+                if selected_contract:
+                    sub_df = df_contract[df_contract["계약명"] == selected_contract].copy()
 
-                        first_row = sub_df.iloc[0]
-                        client = first_row["발주처"] if "발주처" in df_contract.columns and pd.notna(first_row["발주처"]) else "-"
+                    first_row = sub_df.iloc[0]
+                    client = first_row["발주처"] if "발주처" in df_contract.columns and pd.notna(first_row["발주처"]) else "-"
 
-                        share_ratio = 1.0
-                        if "지분율" in df_contract.columns and pd.notna(first_row["지분율"]):
-                            try:
-                                val = str(first_row["지분율"]).replace("%", "").strip()
-                                share_ratio = float(val)
-                                if share_ratio > 1:
-                                    share_ratio = share_ratio / 100.0
-                            except:
-                                share_ratio = 1.0
+                    share_ratio = 1.0
+                    if "지분율" in df_contract.columns and pd.notna(first_row["지분율"]):
+                        try:
+                            val = str(first_row["지분율"]).replace("%", "").strip()
+                            share_ratio = float(val)
+                            if share_ratio > 1:
+                                share_ratio = share_ratio / 100.0
+                        except:
+                            share_ratio = 1.0
 
-                        # 🌟 '종류'가 '낙찰' 또는 '총괄'인 행들만 골라서 총공사 계약금액 및 당사 계약금액 합산
-                        valid_sum_mask = sub_df["종류"].astype(str).str.contains("낙찰|총괄", na=False)
-                        filtered_sum_df = sub_df[valid_sum_mask]
+                    # 🌟 '종류'가 '낙찰' 또는 '총괄'인 행들만 골라서 총공사 계약금액 및 당사 계약금액 합산
+                    valid_sum_mask = sub_df["종류"].astype(str).str.contains("낙찰|총괄", na=False)
+                    filtered_sum_df = sub_df[valid_sum_mask]
 
-                        total_contract_amount = 0
-                        my_contract_amount = 0
+                    total_contract_amount = 0
+                    my_contract_amount = 0
 
-                        if "낙찰(계약)금액" in filtered_sum_df.columns:
-                            total_contract_amount = pd.to_numeric(filtered_sum_df["낙찰(계약)금액"], errors="coerce").sum()
+                    if "낙찰(계약)금액" in filtered_sum_df.columns:
+                        total_contract_amount = pd.to_numeric(filtered_sum_df["낙찰(계약)금액"], errors="coerce").sum()
 
-                        my_col = None
-                        for col in sub_df.columns:
-                            if "당사 낙찰금액" in col or "당사낙찰금액" in col:
-                                my_col = col
-                                break
+                    my_col = None
+                    for col in sub_df.columns:
+                        if "당사 낙찰금액" in col or "당사낙찰금액" in col:
+                            my_col = col
+                            break
 
-                        if my_col and my_col in filtered_sum_df.columns:
-                            my_contract_amount = pd.to_numeric(filtered_sum_df[my_col], errors="coerce").sum()
+                    if my_col and my_col in filtered_sum_df.columns:
+                        my_contract_amount = pd.to_numeric(filtered_sum_df[my_col], errors="coerce").sum()
 
-                        # 상단 요약 카드 출력
-                        st.markdown(f"### 📌 [{client}] {selected_contract}")
+                    # 상단 요약 카드 출력
+                    st.markdown(f"### 📌 [{client}] {selected_contract}")
 
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("총 공사 계약금액 (낙찰/총괄)", f"{total_contract_amount:,.0f} 원")
-                        with col2:
-                            st.metric("당사 지분율", f"{share_ratio * 100:.1f}%")
-                        with col3:
-                            st.metric("당사 총 계약금액 (낙찰/총괄)", f"{my_contract_amount:,.0f} 원")
-                        with col4:
-                            st.metric("변경/증감 이력", f"{len(sub_df) - 1} 건")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("총 공사 계약금액 (낙찰/총괄)", f"{total_contract_amount:,.0f} 원")
+                    with col2:
+                        st.metric("당사 지분율", f"{share_ratio * 100:.1f}%")
+                    with col3:
+                        st.metric("당사 총 계약금액 (낙찰/총괄)", f"{my_contract_amount:,.0f} 원")
+                    with col4:
+                        st.metric("변경/증감 이력", f"{len(sub_df) - 1} 건")
 
-                        st.markdown("---")
+                    st.markdown("---")
 
-                        # 🌟 차수 계약의 잔여계약금액(전체계약금액 - 누적기계약금액) 계산 컬럼 추가 로직
-                        sub_df_calc = sub_df.copy()
-                        if "낙찰(계약)금액" in sub_df_calc.columns:
-                            remaining_amounts = []
-                            accumulated_sum = 0
-                            for idx, row in sub_df_calc.iterrows():
-                                kind = str(row.get("종류", ""))
-                                amt = pd.to_numeric(row.get("낙찰(계약)금액", 0), errors="coerce")
-                                if pd.isna(amt):
-                                    amt = 0
-                                
-                                if "차수" in kind and "변경" not in kind:
-                                    accumulated_sum += amt
-                                    rem = total_contract_amount - accumulated_sum
-                                    remaining_amounts.append(rem)
-                                else:
-                                    remaining_amounts.append(None)
+                    # 🌟 차수 계약의 잔여계약금액(전체계약금액 - 누적기계약금액) 계산 컬럼 추가 로직
+                    sub_df_calc = sub_df.copy()
+                    if "낙찰(계약)금액" in sub_df_calc.columns:
+                        remaining_amounts = []
+                        accumulated_sum = 0
+                        for idx, row in sub_df_calc.iterrows():
+                            kind = str(row.get("종류", ""))
+                            amt = pd.to_numeric(row.get("낙찰(계약)금액", 0), errors="coerce")
+                            if pd.isna(amt):
+                                amt = 0
                             
-                            sub_df_calc["잔여계약금액"] = remaining_amounts
+                            if "차수" in kind and "변경" not in kind:
+                                accumulated_sum += amt
+                                rem = total_contract_amount - accumulated_sum
+                                remaining_amounts.append(rem)
+                            else:
+                                remaining_amounts.append(None)
+                        
+                        sub_df_calc["잔여계약금액"] = remaining_amounts
 
-                        # 포맷팅 적용
-                        clean_sub_df = clean_display_dataframe(sub_df_calc)
+                    # 포맷팅 적용
+                    clean_sub_df = clean_display_dataframe(sub_df_calc)
 
-                        st.markdown("#### 📋 상세 계약 및 변경 내역 (타임라인)")
-                        display_cols = [
-                            "종류",
-                            "계약일(낙찰)",
-                            "내용",
-                            my_col if my_col else "당사 낙찰금액\n(부가세포함)",
-                            "보증금액(당사)",
-                            "국민주택채권(당사)",
-                            "잔여계약금액",
-                            "특이사항",
-                            "낙찰(계약)금액",
-                            "예정(기초)가격",
-                            "낙찰율",
-                            "착공일",
-                            "준공일",
-                        ]
-                        actual_cols = [c for c in display_cols if c in clean_sub_df.columns]
-                        st.dataframe(clean_sub_df[actual_cols], use_container_width=True)
+                    st.markdown("#### 📋 상세 계약 및 변경 내역 (타임라인)")
+                    display_cols = [
+                        "종류",
+                        "계약일(낙찰)",
+                        "내용",
+                        my_col if my_col else "당사 낙찰금액\n(부가세포함)",
+                        "보증금액(당사)",
+                        "국민주택채권(당사)",
+                        "잔여계약금액",
+                        "특이사항",
+                        "낙찰(계약)금액",
+                        "예정(기초)가격",
+                        "낙찰율",
+                        "착공일",
+                        "준공일",
+                    ]
+                    actual_cols = [c for c in display_cols if c in clean_sub_df.columns]
+                    st.dataframe(clean_sub_df[actual_cols], use_container_width=True)
 
-                        # 차수별 요약 브리핑
-                        st.markdown("#### 🔍 차수 및 증감 계약 요약 브리핑")
-                        summary_view_cols = [
-                            c for c in ["종류", "내용", "계약일(낙찰)", my_col, "잔여계약금액", "특이사항"]
-                            if c in clean_sub_df.columns
-                        ]
-                        if summary_view_cols:
-                            st.table(clean_sub_df[summary_view_cols])
-                else:
-                    st.error("엑셀 파일에 '계약명' 컬럼이 없습니다.")
+                    # 차수별 요약 브리핑
+                    st.markdown("#### 🔍 차수 및 증감 계약 요약 브리핑")
+                    summary_view_cols = [
+                        c for c in ["종류", "내용", "계약일(낙찰)", my_col, "잔여계약금액", "특이사항"]
+                        if c in clean_sub_df.columns
+                    ]
+                    if summary_view_cols:
+                        st.table(clean_sub_df[summary_view_cols])
+            else:
+                st.error("엑셀 파일 내에 '계약명' 컬럼이 존재하지 않습니다.")
+    else:
+        st.error(f"❌ 지정된 경로에 파일이 존재하지 않습니다. 경로를 확인해 주세요:\n`{FIXED_CONTRACT_PATH}`")
