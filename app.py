@@ -37,7 +37,7 @@ def delete_saved_file(file_path):
 
 
 # ---------------------------------------------------------
-# OZ Report 입찰명 정밀 컬럼 파서 (PQ 파싱 강화)
+# OZ Report 입찰명 정밀 컬럼 파서 (오분류 방지 정밀 보완)
 # ---------------------------------------------------------
 def parse_oz_report_4schedules(file_path):
     raw_df = pd.read_excel(file_path, header=None)
@@ -54,7 +54,7 @@ def parse_oz_report_4schedules(file_path):
     title_col_idx = -1
     col_map = {}
 
-    # 헤더 행 탐색
+    # 1. 헤더 행 탐색
     for idx, row in raw_df.iterrows():
         row_cells = [str(c).replace(" ", "").replace("\n", "") for c in row]
         row_str = "".join(row_cells)
@@ -75,26 +75,30 @@ def parse_oz_report_4schedules(file_path):
 
     data_df = raw_df.iloc[header_idx:].reset_index(drop=True)
 
-    # 컬럼 헤더 매핑 (PQ / 협정 / 등록 / 입찰)
+    # 2. 컬럼 헤더 매핑 (우선순위에 맞춘 엄격 매칭)
     for r_idx in range(min(5, len(data_df))):
         row = data_df.iloc[r_idx]
         for c_idx, val in enumerate(row):
             if pd.isna(val):
                 continue
             v_str = str(val).replace(" ", "").replace("\n", "").upper()
-            
-            if "PQ" in v_str or "실적" in v_str or "P.Q" in v_str:
-                if "PQ" not in col_map:
-                    col_map["PQ"] = c_idx
-            elif "협정" in v_str:
-                if "협정" not in col_map:
-                    col_map["협정"] = c_idx
-            elif "등록" in v_str:
-                if "등록" not in col_map:
-                    col_map["등록"] = c_idx
-            elif ("입찰" in v_str and "마감" in v_str) or "입찰일" in v_str or "투찰" in v_str:
-                if "입찰" not in col_map:
-                    col_map["입찰"] = c_idx
+
+            # PQ / 실적
+            if ("PQ" in v_str or "실적" in v_str or "P.Q" in v_str) and "PQ" not in col_map:
+                col_map["PQ"] = c_idx
+            # 협정
+            elif "협정" in v_str and "협정" not in col_map:
+                col_map["협정"] = c_idx
+            # 입찰 (등록보다 입찰 단어를 우선 탐색하여 오분류 방지)
+            elif (
+                ("입찰" in v_str and ("마감" in v_str or "일" in v_str or "시" in v_str))
+                or "투찰" in v_str
+                or "개찰" in v_str
+            ) and "입찰" not in col_map:
+                col_map["입찰"] = c_idx
+            # 등록 (입찰이 명시적으로 포함된 단어는 제외)
+            elif "등록" in v_str and "입찰" not in v_str and "등록" not in col_map:
+                col_map["등록"] = c_idx
 
     parsed_events = []
 
@@ -134,23 +138,23 @@ def parse_oz_report_4schedules(file_path):
         for cat_key, cat_label, color in categories:
             target_col = col_map.get(cat_key)
 
-            # 매핑된 컬럼이 없을 때 시도할 기본 컬럼 범위
+            # 매핑 실패 시 사용할 표준 OZ Report 열 범위 지정
             if target_col is None:
                 default_cols = {
-                    "PQ": [3, 4, 5],
-                    "협정": [5, 6, 7],
-                    "등록": [7, 8],
+                    "PQ": [3, 4],
+                    "협정": [5, 6],
+                    "등록": [7],
                     "입찰": [8, 9, 10],
                 }
                 search_cols = default_cols[cat_key]
             else:
-                search_cols = [target_col, target_col + 1]  # 바로 옆 칸까지 탐색
+                search_cols = [target_col]
 
             date_str = None
             for c_i in search_cols:
                 if len(row) > c_i and pd.notna(row.iloc[c_i]):
                     val1 = str(row.iloc[c_i]).strip()
-                    # 날짜 패턴 추출 (M/D, M-D, M.D 등)
+                    # M/D, M-D, M.D 형식 날짜 추출
                     m = re.search(r"(\d{1,2})[/.-](\d{1,2})", val1)
                     if m:
                         month = int(m.group(1))
