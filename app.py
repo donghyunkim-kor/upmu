@@ -298,17 +298,43 @@ with tab3:
 
 from pathlib import Path
 
+from pathlib import Path
+import os
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
+
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (고정 경로 자동 연동 전용)
+# [TAB 4] 계약 관리 (진단 기반 정확한 자동 연동 및 주기적 갱신)
 # ---------------------------------------------------------
 with tab4:
-    st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
+    st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 자동 연동)")
 
-    FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
+    FIXED_CONTRACT_PATH = Path(
+        r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
+    )
+
+    # 30초마다 자동 새로고침 설정 (라이브러리가 있을 경우에만 작동)
+    if st_autorefresh is not None:
+        st_autorefresh(interval=30_000, key="contract_auto_refresh")
+
+    @st.cache_data(show_spinner=False)
+    def load_contract_excel(path_str: str, modified_time: float):
+        return pd.read_excel(
+            path_str,
+            sheet_name="계약입력",
+            engine="openpyxl",
+        )
 
     col_info, col_btn = st.columns([4, 1])
+
     with col_info:
-        st.info(f"📁 고정 경로 자동 연동 중: `{FIXED_CONTRACT_PATH}`")
+        st.info(f"📁 자동 연동 경로: `{FIXED_CONTRACT_PATH}`")
+
     with col_btn:
         if st.button("🔄 새로고침", key="refresh_contract_auto"):
             st.cache_data.clear()
@@ -317,27 +343,68 @@ with tab4:
     st.markdown("---")
 
     df_contract = None
-    
-    # 윈도우 시스템 바이너리 레벨에서 경로 강제 접근
-    if os.path.exists(FIXED_CONTRACT_PATH):
-        try:
-            df_contract = pd.read_excel(
-                FIXED_CONTRACT_PATH, 
-                sheet_name="계약입력", 
-                engine="openpyxl"
-            )
-        except Exception as e:
-            st.error(f"❌ 파일을 찾았으나 '계약입력' 시트를 읽는 중 오류가 발생했습니다: {e}")
-    else:
-        # 만약 그래도 안 읽힌다면 시스템 드라이브 권한 문제이므로 원인 안내
+
+    # 단계별 정확한 진단 및 파일 로드
+    if not FIXED_CONTRACT_PATH.drive:
+        st.error("❌ 드라이브가 포함되지 않은 경로입니다.")
+
+    elif not Path(FIXED_CONTRACT_PATH.drive + "\\").exists():
         st.error(
-            f"❌ 파이썬이 지정된 경로(`{FIXED_CONTRACT_PATH}`)에 접근하지 못했습니다.\n\n"
-            "**[해결 방법]**\n"
-            "1. 현재 실행 중인 터미널(CMD, VS Code 등)을 완전히 종료합니다.\n"
-            "2. 터미널 아이콘을 우클릭하여 **[관리자 권한으로 실행]**을 누릅니다.\n"
-            "3. 그 상태에서 스트림릿(`streamlit run ...`)을 다시 켜시면 정상적으로 자동 연동됩니다."
+            "❌ 현재 Streamlit 실행 환경에서는 D: 드라이브가 보이지 않습니다.\n\n"
+            f"- 실행 환경: `{os.name}`\n"
+            f"- 현재 작업 폴더: `{os.getcwd()}`\n\n"
+            "Streamlit이 파일이 있는 Windows PC에서 직접 실행 중인지 확인하거나, "
+            "네트워크 드라이브/공유폴더의 UNC 경로로 수정해야 합니다."
         )
 
+    elif not FIXED_CONTRACT_PATH.parent.exists():
+        st.error(
+            "❌ 계약관리 폴더를 찾지 못했습니다.\n\n"
+            f"확인된 경로: `{FIXED_CONTRACT_PATH.parent}`"
+        )
+
+    elif not FIXED_CONTRACT_PATH.is_file():
+        folder_files = [
+            p.name for p in FIXED_CONTRACT_PATH.parent.glob("*.xls*")
+        ]
+
+        st.error(
+            "❌ 지정한 파일명을 찾지 못했습니다.\n\n"
+            f"찾는 파일: `{FIXED_CONTRACT_PATH.name}`"
+        )
+
+        if folder_files:
+            st.write("💡 현재 폴더에 존재하는 엑셀 파일들:", folder_files)
+
+    else:
+        try:
+            modified_time = FIXED_CONTRACT_PATH.stat().st_mtime
+
+            df_contract = load_contract_excel(
+                str(FIXED_CONTRACT_PATH),
+                modified_time,
+            )
+
+            st.success(
+                f"✅ 자동 연동 완료 · "
+                f"{datetime.fromtimestamp(modified_time):%Y-%m-%d %H:%M:%S} 기준"
+            )
+
+        except PermissionError:
+            st.error(
+                "❌ 파일은 존재하지만 읽기 권한이 없습니다. "
+                "엑셀 파일이 다른 프로그램(예: 엑셀 자체)에서 열려 있거나 잠겨 있는지 확인하세요."
+            )
+
+        except ValueError as e:
+            st.error(
+                f"❌ 엑셀 파일 내에 '계약입력' 시트를 찾지 못했거나 구조가 올바르지 않습니다: {e}"
+            )
+
+        except Exception as e:
+            st.exception(e)
+
+    # 엑셀 데이터가 성공적으로 로드된 경우 하위 대시보드 렌더링
     if df_contract is not None:
         df_contract.columns = df_contract.columns.str.strip()
 
