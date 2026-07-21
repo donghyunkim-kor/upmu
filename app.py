@@ -297,7 +297,7 @@ with tab3:
             st.dataframe(filtered_perf, use_container_width=True)
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (고정 경로 다이렉트 자동 로드 및 최적화 적용)
+# [TAB 4] 계약 관리 (에러 캐치 및 디버깅 강화 버전)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
@@ -315,16 +315,18 @@ with tab4:
     st.markdown("---")
 
     if os.path.exists(FIXED_CONTRACT_PATH):
-        try:
-            # 🌟 data_only=True 속성을 주어 수식 자체를 읽지 않고 '결과값'만 아주 빠르게 가져오며, '계약입력' 시트만 정확히 타겟팅합니다.
-            df_contract = pd.read_excel(
-                FIXED_CONTRACT_PATH, 
-                sheet_name="계약입력", 
-                engine="openpyxl"
-            )
-        except Exception as e:
-            st.error(f"시트 읽기 오류 ('계약입력' 시트가 있는지 확인해주세요): {e}")
-            df_contract = None
+        df_contract = None
+        # 🌟 로딩 상태를 명확히 보여주면서 에러를 숨기지 않고 뱉어내도록 수정
+        with st.spinner("엑셀 파일을 읽어오는 중입니다..."):
+            try:
+                df_contract = pd.read_excel(
+                    FIXED_CONTRACT_PATH, 
+                    sheet_name="계약입력", 
+                    engine="openpyxl"
+                )
+            except Exception as e:
+                st.error(f"❌ 엑셀 파일을 읽는 도중 에러가 발생했습니다: {e}")
+                df_contract = None
 
         if df_contract is not None:
             df_contract.columns = df_contract.columns.str.strip()
