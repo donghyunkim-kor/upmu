@@ -34,7 +34,7 @@ def save_uploaded_file(uploaded_file, target_dir):
 
 
 def get_saved_files(target_dir):
-    """지정된 폴더 내의 엑셀 파일(.xlsx) 목록을 최신 수정순으로 가져옵니다."""
+    """지정된 폴더 내의 엑셀 파일 목록을 최신 수정순으로 가져옵니다."""
     if not os.path.exists(target_dir):
         return []
     files = [f for f in os.listdir(target_dir) if f.endswith(".xlsx") or f.endswith(".xls")]
@@ -51,7 +51,7 @@ def delete_saved_file(file_path):
 
 
 def parse_oz_date(val):
-    """날짜 및 시간 텍스트 파싱 유틸리티 (YYYY-MM-DD HH:MM 또는 YYYY-MM-DD)"""
+    """OZ Report 날짜 및 시간 텍스트 파싱 유틸리티"""
     if pd.isna(val) or not str(val).strip():
         return None
     val_str = str(val).strip()
@@ -66,47 +66,43 @@ def parse_oz_date(val):
 
 
 # ---------------------------------------------------------
-# [TAB 1: 입찰 일정 파서 (OZ Report 및 일반 엑셀 범용 지원)]
+# [TAB 1: OZ Report 입찰 일정 파서 - 원본 완벽 복원]
 # ---------------------------------------------------------
 def parse_bid_excel(file_path):
-    """입찰 일정 엑셀 파일을 파싱하여 캘린더 이벤트 목록을 생성합니다."""
+    """
+    OZ Report 엑셀 파싱 (Col 1: 공사명, Col 2: 발주처, Col 4: PQ, Col 7: 협정, Col 9: 등록, Col 10: 입찰)
+    """
     df_raw = pd.read_excel(file_path, header=None)
     events = []
     
-    # 헤더 위치 자동 탐색
+    # 1. '공사명' 또는 '입찰공고' 헤더 시작 위치 탐색
     start_row = 0
     for idx, row in df_raw.iterrows():
         row_str = " ".join(row.dropna().astype(str))
-        if any(k in row_str for k in ["공사명", "입찰공고", "발주처", "공고명", "입찰일시"]):
+        if "공사명" in row_str or "입찰공고" in row_str:
             start_row = idx + 1
             break
             
+    # 2. 데이터 행 파싱
     for idx in range(start_row, len(df_raw)):
         row = df_raw.iloc[idx]
-        if row.dropna().empty:
-            continue
-            
+        
+        # Col 1 (공사명) 확인
         title = row.iloc[1] if len(row) > 1 else None
+        
         if pd.isna(title) or not str(title).strip() or "합계" in str(title):
             continue
             
         title = str(title).strip()
         client = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else "발주처 미상"
         
-        # OZ Report 및 일반 컬럼 위치 대응
+        # OZ Report 지정 열 정확히 조준
         pq_date = parse_oz_date(row.iloc[4]) if len(row) > 4 else None
         joint_date = parse_oz_date(row.iloc[7]) if len(row) > 7 else None
         reg_date = parse_oz_date(row.iloc[9]) if len(row) > 9 else None
         bid_date = parse_oz_date(row.iloc[10]) if len(row) > 10 else None
 
-        # 일반 엑셀 형태 추가 확인 (컬럼 검색)
-        if not (pq_date or joint_date or reg_date or bid_date):
-            for col_idx, val in enumerate(row):
-                parsed = parse_oz_date(val)
-                if parsed:
-                    bid_date = parsed
-                    break
-
+        # 이벤트 등록
         if pq_date:
             events.append({
                 "title": f"[PQ마감] {title} ({client})",
@@ -143,7 +139,7 @@ def parse_bid_excel(file_path):
 # [TAB 2: 경력기술자 파싱 및 데이터 정제]
 # ---------------------------------------------------------
 def load_and_clean_engineer_data(file_path):
-    """경력기술자 엑셀 파싱 및 자동 컬럼 매핑"""
+    """경력기술자 엑셀 파싱 및 헤더/컬럼 매핑"""
     df_raw = pd.read_excel(file_path, header=None)
     
     header_idx = None
@@ -192,7 +188,7 @@ def load_and_clean_engineer_data(file_path):
 
 
 # ---------------------------------------------------------
-# [TAB 3: 준공실적증명 파싱 및 데이터 정제]
+# [TAB 3: 준공실적증명 파싱]
 # ---------------------------------------------------------
 def load_and_clean_perf_data(file_path):
     """준공실적증명 엑셀 파싱"""
@@ -215,7 +211,7 @@ def load_and_clean_perf_data(file_path):
 
 
 # ---------------------------------------------------------
-# [메인 UI - 3개 탭 구성]
+# [메인 UI - 3개 탭]
 # ---------------------------------------------------------
 st.title("🏗️ 통합 건설 사업 관리 시스템")
 
@@ -237,7 +233,7 @@ with tab1:
             st.success(f"✅ '{uploaded_bid.name}' 입찰 파일 저장 완료!")
             st.cache_data.clear()
 
-            # 업로드 직후 즉시 세션 갱신 및 리런
+            # 업로드 직후 즉시 세션 반영 및 재실행
             st.session_state["bid_select"] = uploaded_bid.name
             st.rerun()
 
@@ -287,7 +283,7 @@ with tab1:
                 "initialView": "dayGridMonth",
             }
 
-            st.subheader(f"📌 {selected_bid_file} 일정 달력 (총 {len(events)}건 이벤트)")
+            st.subheader(f"📌 {selected_bid_file} 일정 달력 (총 {len(events)}건 일정 표출)")
             calendar(events=events, options=calendar_options, key=f"cal_{selected_bid_file}")
 
 
@@ -307,7 +303,7 @@ with tab2:
             st.success(f"✅ '{uploaded_eng.name}' 경력 파일 저장 완료!")
             st.cache_data.clear()
 
-            # 업로드 직후 수동 새로고침 없이 세션 갱신 및 즉시 리런
+            # 업로드 직후 즉시 세션 반영하여 새로고침 없이 사람 바로 표출
             st.session_state["eng_select"] = uploaded_eng.name
             st.rerun()
 
@@ -416,7 +412,7 @@ with tab3:
             st.success(f"✅ '{uploaded_perf.name}' 실적 파일 저장 완료!")
             st.cache_data.clear()
 
-            # 업로드 직후 즉시 세션 갱신 및 리런
+            # 업로드 직후 즉시 세션 반영 및 재실행
             st.session_state["perf_select"] = uploaded_perf.name
             st.rerun()
 
@@ -460,7 +456,6 @@ with tab3:
 
             filtered_perf = df_perf.copy()
             if perf_search.strip():
-                # 전체 컬럼 검색
                 mask = filtered_perf.astype(str).apply(
                     lambda row: row.str.contains(perf_search.strip(), na=False).any(), axis=1
                 )
