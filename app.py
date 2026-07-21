@@ -37,7 +37,7 @@ def delete_saved_file(file_path):
 
 
 # ---------------------------------------------------------
-# OZ Report 입찰명 정밀 컬럼 파서
+# OZ Report 입찰명 정밀 컬럼 파서 (PQ 파싱 강화)
 # ---------------------------------------------------------
 def parse_oz_report_4schedules(file_path):
     raw_df = pd.read_excel(file_path, header=None)
@@ -54,11 +54,12 @@ def parse_oz_report_4schedules(file_path):
     title_col_idx = -1
     col_map = {}
 
+    # 헤더 행 탐색
     for idx, row in raw_df.iterrows():
         row_cells = [str(c).replace(" ", "").replace("\n", "") for c in row]
         row_str = "".join(row_cells)
 
-        if "공사명" in row_str or "입찰일정" in row_str:
+        if "공사명" in row_str or "입찰일정" in row_str or "PQ" in row_str:
             header_idx = idx
             for c_idx, val in enumerate(row):
                 v_clean = str(val).replace(" ", "").replace("\n", "")
@@ -74,20 +75,26 @@ def parse_oz_report_4schedules(file_path):
 
     data_df = raw_df.iloc[header_idx:].reset_index(drop=True)
 
+    # 컬럼 헤더 매핑 (PQ / 협정 / 등록 / 입찰)
     for r_idx in range(min(5, len(data_df))):
         row = data_df.iloc[r_idx]
         for c_idx, val in enumerate(row):
             if pd.isna(val):
                 continue
-            v_str = str(val).replace(" ", "").replace("\n", "")
-            if "PQ" in v_str or "실적" in v_str:
-                col_map["PQ"] = c_idx
+            v_str = str(val).replace(" ", "").replace("\n", "").upper()
+            
+            if "PQ" in v_str or "실적" in v_str or "P.Q" in v_str:
+                if "PQ" not in col_map:
+                    col_map["PQ"] = c_idx
             elif "협정" in v_str:
-                col_map["협정"] = c_idx
+                if "협정" not in col_map:
+                    col_map["협정"] = c_idx
             elif "등록" in v_str:
-                col_map["등록"] = c_idx
-            elif "입찰" in v_str and "마감" in v_str:
-                col_map["입찰"] = c_idx
+                if "등록" not in col_map:
+                    col_map["등록"] = c_idx
+            elif ("입찰" in v_str and "마감" in v_str) or "입찰일" in v_str or "투찰" in v_str:
+                if "입찰" not in col_map:
+                    col_map["입찰"] = c_idx
 
     parsed_events = []
 
@@ -127,25 +134,30 @@ def parse_oz_report_4schedules(file_path):
         for cat_key, cat_label, color in categories:
             target_col = col_map.get(cat_key)
 
+            # 매핑된 컬럼이 없을 때 시도할 기본 컬럼 범위
             if target_col is None:
                 default_cols = {
-                    "PQ": [4, 5],
-                    "협정": [6, 7],
+                    "PQ": [3, 4, 5],
+                    "협정": [5, 6, 7],
                     "등록": [7, 8],
-                    "입찰": [8, 9],
+                    "입찰": [8, 9, 10],
                 }
                 search_cols = default_cols[cat_key]
             else:
-                search_cols = [target_col]
+                search_cols = [target_col, target_col + 1]  # 바로 옆 칸까지 탐색
 
             date_str = None
             for c_i in search_cols:
                 if len(row) > c_i and pd.notna(row.iloc[c_i]):
-                    val1 = str(row.iloc[c_i])
+                    val1 = str(row.iloc[c_i]).strip()
+                    # 날짜 패턴 추출 (M/D, M-D, M.D 등)
                     m = re.search(r"(\d{1,2})[/.-](\d{1,2})", val1)
                     if m:
-                        date_str = f"{current_year}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
-                        break
+                        month = int(m.group(1))
+                        day = int(m.group(2))
+                        if 1 <= month <= 12 and 1 <= day <= 31:
+                            date_str = f"{current_year}-{month:02d}-{day:02d}"
+                            break
 
             if date_str:
                 event_title = f"{cat_label}_ {clean_title}"
@@ -186,7 +198,6 @@ with tab1:
         if uploaded_bid is not None:
             save_uploaded_file(uploaded_bid, BID_DIR)
             st.success(f"✅ '{uploaded_bid.name}' 업로드 완료!")
-            # 상태 및 캐시 완전 초기화 후 리런
             st.cache_data.clear()
             for key in ["bid_select", "bid_calendar"]:
                 if key in st.session_state:
@@ -197,7 +208,6 @@ with tab1:
 
     with col_sel:
         if saved_bid_files:
-            # 안전하게 인덱스 처리
             selected_bid_file = st.selectbox(
                 "📁 불러올 입찰 파일 선택", saved_bid_files, key="bid_select"
             )
