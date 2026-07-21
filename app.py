@@ -309,14 +309,13 @@ except ImportError:
     st_autorefresh = None
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (진단 기반 정확한 자동 연동 및 주기적 갱신)
+# [TAB 4] 계약 관리 (드라이브 분리 결합 및 진단 자동 연동)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 자동 연동)")
 
-    FIXED_CONTRACT_PATH = Path(
-        r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
-    )
+    # 🌟 백슬래시 슬래시 혼용 및 드라이브 인식 오류를 방지하기 위해 경로를 분할 조합
+    FIXED_CONTRACT_PATH = Path("D:/") / "Data" / "Desktop" / "김동현" / "업무팀자료" / "계약관리" / "현장계약관리_집계.xlsx"
 
     # 30초마다 자동 새로고침 설정 (라이브러리가 있을 경우에만 작동)
     if st_autorefresh is not None:
@@ -346,7 +345,7 @@ with tab4:
 
     # 단계별 정확한 진단 및 파일 로드
     if not FIXED_CONTRACT_PATH.drive:
-        st.error("❌ 드라이브가 포함되지 않은 경로입니다.")
+        st.error(f"❌ 드라이브가 포함되지 않은 경로로 인식되었습니다. (인식된 드라이브: '{FIXED_CONTRACT_PATH.drive}')")
 
     elif not Path(FIXED_CONTRACT_PATH.drive + "\\").exists():
         st.error(
