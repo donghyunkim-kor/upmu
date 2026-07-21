@@ -302,13 +302,12 @@ with tab3:
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
 
-    # 🌟 지정하신 고정 경로 및 파일명
+    # 🌟 고정 경로 앞에 r을 붙여서 오류를 원천 차단했습니다.
     FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
 
-    # 파일 상태 안내 및 새로고침(캐시 클리어) 버튼 제공
     col_info, col_btn = st.columns([3, 1])
     with col_info:
-        st.info(f"📁 지정된 고정 경로 파일 연동중: `{FIXED_CONTRACT_PATH}`")
+        st.info(f"📁 고정 경로 파일 연동중: `{FIXED_CONTRACT_PATH}`")
     with col_btn:
         if st.button("🔄 파일 새로고침", key="refresh_contract"):
             st.cache_data.clear()
