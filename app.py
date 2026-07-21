@@ -299,143 +299,137 @@ with tab3:
 from pathlib import Path
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (pathlib을 이용한 강제 절대 경로 접근)
+# [TAB 4] 계약 관리 (고정 경로 + 즉시 업로드 백업 하이브리드)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
 
-    # 🌟 pathlib을 사용하여 윈도우 시스템 경로 객체로 생성
-    FIXED_CONTRACT_PATH = Path(r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx")
+    FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
 
-    col_info, col_btn = st.columns([3, 1])
-    with col_info:
-        st.info(f"📁 고정 경로 파일 연동중: `{FIXED_CONTRACT_PATH}`")
-    with col_btn:
-        if st.button("🔄 파일 새로고침", key="refresh_contract"):
-            st.cache_data.clear()
-            st.rerun()
+    df_contract = None
+
+    # 1. 고정 경로 시도
+    if os.path.exists(FIXED_CONTRACT_PATH):
+        try:
+            df_contract = pd.read_excel(FIXED_CONTRACT_PATH, sheet_name="계약입력", engine="openpyxl")
+            st.success(f"🔗 고정 경로 연동 성공: `{FIXED_CONTRACT_PATH}`")
+        except Exception as e:
+            st.error(f"❌ 파일은 있으나 '계약입력' 시트를 읽는 중 에러 발생: {e}")
+    else:
+        # 2. 경로가 안 잡힐 때 바로 쓸 수 있는 업로드 박스 제공
+        st.warning("⚠️ 지정된 고정 경로(`D:\\Data\\Desktop\\...`)에 파이썬이 접근하지 못하고 있습니다. 아래에 파일을 직접 드래그해서 넣어주시면 곧바로 연동됩니다!")
+        uploaded_fallback = st.file_uploader("현장계약관리_집계.xlsx 파일 업로드하기", type=["xlsx"], key="fallback_contract_up")
+        if uploaded_fallback is not None:
+            try:
+                df_contract = pd.read_excel(uploaded_fallback, sheet_name="계약입력", engine="openpyxl")
+                st.success("✅ 파일 업로드 및 연동 완료!")
+            except Exception as e:
+                st.error(f"❌ 업로드된 엑셀의 '계약입력' 시트를 확인해주세요: {e}")
 
     st.markdown("---")
 
-    # pathlib의 .exists()로 파일 존재 여부 확인
-    if FIXED_CONTRACT_PATH.exists():
-        df_contract = None
-        with st.spinner("엑셀 파일을 읽어오는 중입니다..."):
-            try:
-                # 🌟 경로 객체를 문자열로 변환하여 read_excel에 전달
-                df_contract = pd.read_excel(
-                    str(FIXED_CONTRACT_PATH), 
-                    sheet_name="계약입력", 
-                    engine="openpyxl"
-                )
-            except Exception as e:
-                st.error(f"❌ 엑셀 파일을 읽는 도중 에러가 발생했습니다: {e}")
-                df_contract = None
+    if df_contract is not None:
+        df_contract.columns = df_contract.columns.str.strip()
 
-        if df_contract is not None:
-            df_contract.columns = df_contract.columns.str.strip()
+        if "계약명" in df_contract.columns:
+            contract_list = df_contract["계약명"].dropna().unique().tolist()
+            selected_contract = st.selectbox("🎯 조회할 계약(공사)을 선택하세요:", contract_list, key="selected_contract_box")
 
-            if "계약명" in df_contract.columns:
-                contract_list = df_contract["계약명"].dropna().unique().tolist()
-                selected_contract = st.selectbox("🎯 조회할 계약(공사)을 선택하세요:", contract_list, key="selected_contract_box")
+            if selected_contract:
+                sub_df = df_contract[df_contract["계약명"] == selected_contract].copy()
 
-                if selected_contract:
-                    sub_df = df_contract[df_contract["계약명"] == selected_contract].copy()
+                first_row = sub_df.iloc[0]
+                client = first_row["발주처"] if "발주처" in df_contract.columns and pd.notna(first_row["발주처"]) else "-"
 
-                    first_row = sub_df.iloc[0]
-                    client = first_row["발주처"] if "발주처" in df_contract.columns and pd.notna(first_row["발주처"]) else "-"
+                share_ratio = 1.0
+                if "지분율" in df_contract.columns and pd.notna(first_row["지분율"]):
+                    try:
+                        val = str(first_row["지분율"]).replace("%", "").strip()
+                        share_ratio = float(val)
+                        if share_ratio > 1:
+                            share_ratio = share_ratio / 100.0
+                    except:
+                        share_ratio = 1.0
 
-                    share_ratio = 1.0
-                    if "지분율" in df_contract.columns and pd.notna(first_row["지분율"]):
-                        try:
-                            val = str(first_row["지분율"]).replace("%", "").strip()
-                            share_ratio = float(val)
-                            if share_ratio > 1:
-                                share_ratio = share_ratio / 100.0
-                        except:
-                            share_ratio = 1.0
+                valid_sum_mask = sub_df["종류"].astype(str).str.contains("낙찰|총괄", na=False)
+                filtered_sum_df = sub_df[valid_sum_mask]
 
-                    valid_sum_mask = sub_df["종류"].astype(str).str.contains("낙찰|총괄", na=False)
-                    filtered_sum_df = sub_df[valid_sum_mask]
+                total_contract_amount = 0
+                my_contract_amount = 0
 
-                    total_contract_amount = 0
-                    my_contract_amount = 0
+                if "낙찰(계약)금액" in filtered_sum_df.columns:
+                    total_contract_amount = pd.to_numeric(filtered_sum_df["낙찰(계약)금액"], errors="coerce").sum()
 
-                    if "낙찰(계약)금액" in filtered_sum_df.columns:
-                        total_contract_amount = pd.to_numeric(filtered_sum_df["낙찰(계약)금액"], errors="coerce").sum()
+                my_col = None
+                for col in sub_df.columns:
+                    if "당사 낙찰금액" in col or "당사낙찰금액" in col:
+                        my_col = col
+                        break
 
-                    my_col = None
-                    for col in sub_df.columns:
-                        if "당사 낙찰금액" in col or "당사낙찰금액" in col:
-                            my_col = col
-                            break
+                if my_col and my_col in filtered_sum_df.columns:
+                    my_contract_amount = pd.to_numeric(filtered_sum_df[my_col], errors="coerce").sum()
 
-                    if my_col and my_col in filtered_sum_df.columns:
-                        my_contract_amount = pd.to_numeric(filtered_sum_df[my_col], errors="coerce").sum()
+                # 상단 요약 카드 출력
+                st.markdown(f"### 📌 [{client}] {selected_contract}")
 
-                    # 상단 요약 카드 출력
-                    st.markdown(f"### 📌 [{client}] {selected_contract}")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("총 공사 계약금액 (낙찰/총괄)", f"{total_contract_amount:,.0f} 원")
+                with col2:
+                    st.metric("당사 지분율", f"{share_ratio * 100:.1f}%")
+                with col3:
+                    st.metric("당사 총 계약금액 (낙찰/총괄)", f"{my_contract_amount:,.0f} 원")
+                with col4:
+                    st.metric("변경/증감 이력", f"{len(sub_df) - 1} 건")
 
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("총 공사 계약금액 (낙찰/총괄)", f"{total_contract_amount:,.0f} 원")
-                    with col2:
-                        st.metric("당사 지분율", f"{share_ratio * 100:.1f}%")
-                    with col3:
-                        st.metric("당사 총 계약금액 (낙찰/총괄)", f"{my_contract_amount:,.0f} 원")
-                    with col4:
-                        st.metric("변경/증감 이력", f"{len(sub_df) - 1} 건")
+                st.markdown("---")
 
-                    st.markdown("---")
-
-                    sub_df_calc = sub_df.copy()
-                    if "낙찰(계약)금액" in sub_df_calc.columns:
-                        remaining_amounts = []
-                        accumulated_sum = 0
-                        for idx, row in sub_df_calc.iterrows():
-                            kind = str(row.get("종류", ""))
-                            amt = pd.to_numeric(row.get("낙찰(계약)금액", 0), errors="coerce")
-                            if pd.isna(amt):
-                                amt = 0
-                            
-                            if "차수" in kind and "변경" not in kind:
-                                accumulated_sum += amt
-                                rem = total_contract_amount - accumulated_sum
-                                remaining_amounts.append(rem)
-                            else:
-                                remaining_amounts.append(None)
+                sub_df_calc = sub_df.copy()
+                if "낙찰(계약)금액" in sub_df_calc.columns:
+                    remaining_amounts = []
+                    accumulated_sum = 0
+                    for idx, row in sub_df_calc.iterrows():
+                        kind = str(row.get("종류", ""))
+                        amt = pd.to_numeric(row.get("낙찰(계약)금액", 0), errors="coerce")
+                        if pd.isna(amt):
+                            amt = 0
                         
-                        sub_df_calc["잔여계약금액"] = remaining_amounts
+                        if "차수" in kind and "변경" not in kind:
+                            accumulated_sum += amt
+                            rem = total_contract_amount - accumulated_sum
+                            remaining_amounts.append(rem)
+                        else:
+                            remaining_amounts.append(None)
+                    
+                    sub_df_calc["잔여계약금액"] = remaining_amounts
 
-                    clean_sub_df = clean_display_dataframe(sub_df_calc)
+                clean_sub_df = clean_display_dataframe(sub_df_calc)
 
-                    st.markdown("#### 📋 상세 계약 및 변경 내역 (타임라인)")
-                    display_cols = [
-                        "종류",
-                        "계약일(낙찰)",
-                        "내용",
-                        my_col if my_col else "당사 낙찰금액\n(부가세포함)",
-                        "보증금액(당사)",
-                        "국민주택채권(당사)",
-                        "잔여계약금액",
-                        "특이사항",
-                        "낙찰(계약)금액",
-                        "예정(기초)가격",
-                        "낙찰율",
-                        "착공일",
-                        "준공일",
-                    ]
-                    actual_cols = [c for c in display_cols if c in clean_sub_df.columns]
-                    st.dataframe(clean_sub_df[actual_cols], use_container_width=True)
+                st.markdown("#### 📋 상세 계약 및 변경 내역 (타임라인)")
+                display_cols = [
+                    "종류",
+                    "계약일(낙찰)",
+                    "내용",
+                    my_col if my_col else "당사 낙찰금액\n(부가세포함)",
+                    "보증금액(당사)",
+                    "국민주택채권(당사)",
+                    "잔여계약금액",
+                    "특이사항",
+                    "낙찰(계약)금액",
+                    "예정(기초)가격",
+                    "낙찰율",
+                    "착공일",
+                    "준공일",
+                ]
+                actual_cols = [c for c in display_cols if c in clean_sub_df.columns]
+                st.dataframe(clean_sub_df[actual_cols], use_container_width=True)
 
-                    st.markdown("#### 🔍 차수 및 증감 계약 요약 브리핑")
-                    summary_view_cols = [
-                        c for c in ["종류", "내용", "계약일(낙찰)", my_col, "잔여계약금액", "특이사항"]
-                        if c in clean_sub_df.columns
-                    ]
-                    if summary_view_cols:
-                        st.table(clean_sub_df[summary_view_cols])
-            else:
-                st.error("엑셀 파일 내에 '계약명' 컬럼이 존재하지 않습니다.")
-    else:
-        st.error(f"❌ 지정된 경로에 파일이 존재하지 않거나 권한이 차단되었습니다:\n`{FIXED_CONTRACT_PATH}`")
+                st.markdown("#### 🔍 차수 및 증감 계약 요약 브리핑")
+                summary_view_cols = [
+                    c for c in ["종류", "내용", "계약일(낙찰)", my_col, "잔여계약금액", "특이사항"]
+                    if c in clean_sub_df.columns
+                ]
+                if summary_view_cols:
+                    st.table(clean_sub_df[summary_view_cols])
+        else:
+            st.error("엑셀 파일 내에 '계약명' 컬럼이 존재하지 않습니다.")
