@@ -37,78 +37,49 @@ def delete_saved_file(file_path):
 
 
 # ---------------------------------------------------------
-# OZ Report 입찰명 정밀 컬럼 파서 (오분류 방지 정밀 보완)
+# OZ Report 입찰명 완벽 일치 파서 (실제 엑셀 컬럼 매핑)
 # ---------------------------------------------------------
 def parse_oz_report_4schedules(file_path):
     raw_df = pd.read_excel(file_path, header=None)
 
-    current_year = datetime.now().year
-    for cell in raw_df.iloc[:5].values.flatten():
-        cell_str = str(cell)
-        match = re.search(r"202\d", cell_str)
-        if match:
-            current_year = int(match.group())
-            break
+    # 1. 헤더 행 및 일정 관련 열 인덱스 찾기
+    pq_col = 4
+    agreement_col = 7
+    reg_col = 9
+    bid_col = 10
+    year_col = 0
+    title_col = 1
 
-    header_idx = -1
-    title_col_idx = -1
-    col_map = {}
-
-    # 1. 헤더 행 탐색
+    # 헤더 검색을 통한 자동 열 위치 보정
     for idx, row in raw_df.iterrows():
-        row_cells = [str(c).replace(" ", "").replace("\n", "") for c in row]
-        row_str = "".join(row_cells)
-
-        if "공사명" in row_str or "입찰일정" in row_str or "PQ" in row_str:
-            header_idx = idx
-            for c_idx, val in enumerate(row):
-                v_clean = str(val).replace(" ", "").replace("\n", "")
-                if "공사명" in v_clean:
-                    title_col_idx = c_idx
-                    break
-            break
-
-    if header_idx == -1:
-        header_idx = 0
-    if title_col_idx == -1:
-        title_col_idx = 1
-
-    data_df = raw_df.iloc[header_idx:].reset_index(drop=True)
-
-    # 2. 컬럼 헤더 매핑 (우선순위에 맞춘 엄격 매칭)
-    for r_idx in range(min(5, len(data_df))):
-        row = data_df.iloc[r_idx]
-        for c_idx, val in enumerate(row):
-            if pd.isna(val):
-                continue
-            v_str = str(val).replace(" ", "").replace("\n", "").upper()
-
-            # PQ / 실적
-            if ("PQ" in v_str or "실적" in v_str or "P.Q" in v_str) and "PQ" not in col_map:
-                col_map["PQ"] = c_idx
-            # 협정
-            elif "협정" in v_str and "협정" not in col_map:
-                col_map["협정"] = c_idx
-            # 입찰 (등록보다 입찰 단어를 우선 탐색하여 오분류 방지)
-            elif (
-                ("입찰" in v_str and ("마감" in v_str or "일" in v_str or "시" in v_str))
-                or "투찰" in v_str
-                or "개찰" in v_str
-            ) and "입찰" not in col_map:
-                col_map["입찰"] = c_idx
-            # 등록 (입찰이 명시적으로 포함된 단어는 제외)
-            elif "등록" in v_str and "입찰" not in v_str and "등록" not in col_map:
-                col_map["등록"] = c_idx
+        row_cells = [
+            str(c).replace(" ", "").replace("\n", "").upper() for c in row
+        ]
+        for c_i, cell in enumerate(row_cells):
+            if "PQ" in cell or "실적" in cell:
+                pq_col = c_i
+            elif "협정" in cell:
+                agreement_col = c_i
+            elif "등록" in cell and "입찰" not in cell:
+                reg_col = c_i
+            elif "입찰" in cell and ("마감" in cell or "일" in cell):
+                bid_col = c_i
+            elif "공사명" in cell:
+                title_col = c_i
+            elif "년도" in cell:
+                year_col = c_i
 
     parsed_events = []
 
-    for idx in range(len(data_df)):
-        row = data_df.iloc[idx]
+    # 2. 데이터 행 순회
+    for idx in range(len(raw_df)):
+        row = raw_df.iloc[idx]
 
-        if len(row) <= title_col_idx or pd.isna(row.iloc[title_col_idx]):
+        # 공사명 검증
+        if len(row) <= title_col or pd.isna(row.iloc[title_col]):
             continue
 
-        raw_title = str(row.iloc[title_col_idx]).strip()
+        raw_title = str(row.iloc[title_col]).strip()
 
         if (
             "공사명" in raw_title
@@ -119,6 +90,7 @@ def parse_oz_report_4schedules(file_path):
         ):
             continue
 
+        # 줄바꿈이 있는 경우 첫 줄(공사명)만 취득
         title_lines = [
             line.strip()
             for line in raw_title.split("\n")
@@ -128,53 +100,42 @@ def parse_oz_report_4schedules(file_path):
             continue
         clean_title = title_lines[0]
 
-        categories = [
-            ("PQ", "PQ", "#E1BEE7"),
-            ("협정", "협정", "#C8E6C9"),
-            ("등록", "등록", "#FFE0B2"),
-            ("입찰", "입찰", "#BBDEFB"),
+        # 해당 행의 연도 확인 (년도 컬럼)
+        row_year = datetime.now().year
+        if len(row) > year_col and pd.notna(row.iloc[year_col]):
+            y_str = str(row.iloc[year_col]).strip()
+            m_year = re.search(r"202\d", y_str)
+            if m_year:
+                row_year = int(m_year.group())
+
+        # 각 카테고리별 컬럼 지정
+        schedules = [
+            ("PQ", pq_col, "#E1BEE7"),
+            ("협정", agreement_col, "#C8E6C9"),
+            ("등록", reg_col, "#FFE0B2"),
+            ("입찰", bid_col, "#BBDEFB"),
         ]
 
-        for cat_key, cat_label, color in categories:
-            target_col = col_map.get(cat_key)
-
-            # 매핑 실패 시 사용할 표준 OZ Report 열 범위 지정
-            if target_col is None:
-                default_cols = {
-                    "PQ": [3, 4],
-                    "협정": [5, 6],
-                    "등록": [7],
-                    "입찰": [8, 9, 10],
-                }
-                search_cols = default_cols[cat_key]
-            else:
-                search_cols = [target_col]
-
-            date_str = None
-            for c_i in search_cols:
-                if len(row) > c_i and pd.notna(row.iloc[c_i]):
-                    val1 = str(row.iloc[c_i]).strip()
-                    # M/D, M-D, M.D 형식 날짜 추출
-                    m = re.search(r"(\d{1,2})[/.-](\d{1,2})", val1)
-                    if m:
-                        month = int(m.group(1))
-                        day = int(m.group(2))
-                        if 1 <= month <= 12 and 1 <= day <= 31:
-                            date_str = f"{current_year}-{month:02d}-{day:02d}"
-                            break
-
-            if date_str:
-                event_title = f"{cat_label}_ {clean_title}"
-                parsed_events.append(
-                    {
-                        "title": event_title,
-                        "start": date_str,
-                        "end": date_str,
-                        "backgroundColor": color,
-                        "borderColor": color,
-                        "textColor": "#1A1A1A",
-                    }
-                )
+        for cat_label, c_idx, color in schedules:
+            if len(row) > c_idx and pd.notna(row.iloc[c_idx]):
+                val_str = str(row.iloc[c_idx]).strip()
+                # M/D, MM/DD 형태 추출
+                m_date = re.search(r"(\d{1,2})[/.-](\d{1,2})", val_str)
+                if m_date:
+                    month = int(m_date.group(1))
+                    day = int(m_date.group(2))
+                    if 1 <= month <= 12 and 1 <= day <= 31:
+                        date_str = f"{row_year}-{month:02d}-{day:02d}"
+                        parsed_events.append(
+                            {
+                                "title": f"{cat_label}_ {clean_title}",
+                                "start": date_str,
+                                "end": date_str,
+                                "backgroundColor": color,
+                                "borderColor": color,
+                                "textColor": "#1A1A1A",
+                            }
+                        )
 
     return parsed_events
 
