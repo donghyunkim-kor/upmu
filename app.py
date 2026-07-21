@@ -181,27 +181,33 @@ with tab1:
         uploaded_bid = st.file_uploader(
             "OZ Report 입찰 일정 엑셀(.xlsx) 업로드",
             type=["xlsx"],
-            key="bid_up",
+            key="bid_uploader",
         )
         if uploaded_bid is not None:
             save_uploaded_file(uploaded_bid, BID_DIR)
             st.success(f"✅ '{uploaded_bid.name}' 업로드 완료!")
-            if "bid_select" in st.session_state:
-                del st.session_state["bid_select"]
+            # 상태 및 캐시 완전 초기화 후 리런
+            st.cache_data.clear()
+            for key in ["bid_select", "bid_calendar"]:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
 
     saved_bid_files = get_saved_files(BID_DIR)
 
     with col_sel:
         if saved_bid_files:
+            # 안전하게 인덱스 처리
             selected_bid_file = st.selectbox(
                 "📁 불러올 입찰 파일 선택", saved_bid_files, key="bid_select"
             )
             if st.button("🗑️ 선택한 입찰 파일 삭제", key="del_bid"):
                 file_path_to_del = os.path.join(BID_DIR, selected_bid_file)
                 if delete_saved_file(file_path_to_del):
-                    if "bid_select" in st.session_state:
-                        del st.session_state["bid_select"]
+                    st.cache_data.clear()
+                    for key in ["bid_select", "bid_uploader", "bid_calendar"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
                     st.success(f"🗑️ '{selected_bid_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
@@ -267,12 +273,6 @@ with tab1:
         key="bid_calendar",
     )
 
-    if state.get("eventClick"):
-        clicked_event = state["eventClick"]["event"]
-        st.info(
-            f"📌 **선택한 일정:** {clicked_event['title']} (날짜: {clicked_event['start']})"
-        )
-
 # ---------------------------------------------------------
 # [TAB 2] 경력기술자 검색
 # ---------------------------------------------------------
@@ -281,11 +281,12 @@ with tab2:
     col_up, col_sel = st.columns([1, 1])
     with col_up:
         uploaded_eng = st.file_uploader(
-            "새 경력 엑셀 파일(.xlsx) 업로드", type=["xlsx"], key="eng_up"
+            "새 경력 엑셀 파일(.xlsx) 업로드", type=["xlsx"], key="eng_uploader"
         )
         if uploaded_eng is not None:
             save_uploaded_file(uploaded_eng, ENG_DIR)
             st.success(f"✅ '{uploaded_eng.name}' 경력 파일 저장 완료!")
+            st.cache_data.clear()
             if "eng_select" in st.session_state:
                 del st.session_state["eng_select"]
             st.rerun()
@@ -299,8 +300,10 @@ with tab2:
             if st.button("🗑️ 선택한 경력 파일 삭제", key="del_eng"):
                 file_path_to_del = os.path.join(ENG_DIR, selected_eng_file)
                 if delete_saved_file(file_path_to_del):
-                    if "eng_select" in st.session_state:
-                        del st.session_state["eng_select"]
+                    st.cache_data.clear()
+                    for key in ["eng_select", "eng_uploader"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
                     st.success(f"🗑️ '{selected_eng_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
@@ -413,11 +416,12 @@ with tab3:
 
     with col_up2:
         uploaded_perf = st.file_uploader(
-            "새 실적 엑셀 파일(.xlsx) 업로드", type=["xlsx"], key="perf_up"
+            "새 실적 엑셀 파일(.xlsx) 업로드", type=["xlsx"], key="perf_uploader"
         )
         if uploaded_perf is not None:
             save_uploaded_file(uploaded_perf, PERF_DIR)
             st.success(f"✅ '{uploaded_perf.name}' 실적 파일 저장 완료!")
+            st.cache_data.clear()
             if "perf_select" in st.session_state:
                 del st.session_state["perf_select"]
             st.rerun()
@@ -432,8 +436,10 @@ with tab3:
             if st.button("🗑️ 선택한 실적 파일 삭제", key="del_perf"):
                 file_path_to_del = os.path.join(PERF_DIR, selected_perf_file)
                 if delete_saved_file(file_path_to_del):
-                    if "perf_select" in st.session_state:
-                        del st.session_state["perf_select"]
+                    st.cache_data.clear()
+                    for key in ["perf_select", "perf_uploader"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
                     st.success(f"🗑️ '{selected_perf_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
