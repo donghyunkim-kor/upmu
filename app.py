@@ -186,6 +186,8 @@ with tab1:
         if uploaded_bid is not None:
             save_uploaded_file(uploaded_bid, BID_DIR)
             st.success(f"✅ '{uploaded_bid.name}' 업로드 완료!")
+            if "bid_select" in st.session_state:
+                del st.session_state["bid_select"]
             st.rerun()
 
     saved_bid_files = get_saved_files(BID_DIR)
@@ -195,10 +197,11 @@ with tab1:
             selected_bid_file = st.selectbox(
                 "📁 불러올 입찰 파일 선택", saved_bid_files, key="bid_select"
             )
-            # 🗑️ 삭제 버튼 추가
             if st.button("🗑️ 선택한 입찰 파일 삭제", key="del_bid"):
                 file_path_to_del = os.path.join(BID_DIR, selected_bid_file)
                 if delete_saved_file(file_path_to_del):
+                    if "bid_select" in st.session_state:
+                        del st.session_state["bid_select"]
                     st.success(f"🗑️ '{selected_bid_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
@@ -209,7 +212,7 @@ with tab1:
 
     bid_events = []
 
-    if selected_bid_file:
+    if selected_bid_file and selected_bid_file in saved_bid_files:
         file_path = os.path.join(BID_DIR, selected_bid_file)
         if os.path.exists(file_path):
             bid_events = parse_oz_report_4schedules(file_path)
@@ -283,6 +286,8 @@ with tab2:
         if uploaded_eng is not None:
             save_uploaded_file(uploaded_eng, ENG_DIR)
             st.success(f"✅ '{uploaded_eng.name}' 경력 파일 저장 완료!")
+            if "eng_select" in st.session_state:
+                del st.session_state["eng_select"]
             st.rerun()
 
     saved_eng_files = get_saved_files(ENG_DIR)
@@ -291,10 +296,11 @@ with tab2:
             selected_eng_file = st.selectbox(
                 "📁 경력 파일 목록 선택", saved_eng_files, key="eng_select"
             )
-            # 🗑️ 삭제 버튼 추가
             if st.button("🗑️ 선택한 경력 파일 삭제", key="del_eng"):
                 file_path_to_del = os.path.join(ENG_DIR, selected_eng_file)
                 if delete_saved_file(file_path_to_del):
+                    if "eng_select" in st.session_state:
+                        del st.session_state["eng_select"]
                     st.success(f"🗑️ '{selected_eng_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
@@ -303,7 +309,7 @@ with tab2:
 
     st.markdown("---")
 
-    if selected_eng_file:
+    if selected_eng_file and selected_eng_file in saved_eng_files:
         file_path = os.path.join(ENG_DIR, selected_eng_file)
         if os.path.exists(file_path):
             df_engineer = pd.read_excel(file_path)
@@ -412,6 +418,8 @@ with tab3:
         if uploaded_perf is not None:
             save_uploaded_file(uploaded_perf, PERF_DIR)
             st.success(f"✅ '{uploaded_perf.name}' 실적 파일 저장 완료!")
+            if "perf_select" in st.session_state:
+                del st.session_state["perf_select"]
             st.rerun()
 
     saved_perf_files = get_saved_files(PERF_DIR)
@@ -421,10 +429,11 @@ with tab3:
             selected_perf_file = st.selectbox(
                 "📁 실적 파일 목록 선택", saved_perf_files, key="perf_select"
             )
-            # 🗑️ 삭제 버튼 추가
             if st.button("🗑️ 선택한 실적 파일 삭제", key="del_perf"):
                 file_path_to_del = os.path.join(PERF_DIR, selected_perf_file)
                 if delete_saved_file(file_path_to_del):
+                    if "perf_select" in st.session_state:
+                        del st.session_state["perf_select"]
                     st.success(f"🗑️ '{selected_perf_file}' 파일이 삭제되었습니다.")
                     st.rerun()
         else:
@@ -433,7 +442,7 @@ with tab3:
 
     st.markdown("---")
 
-    if selected_perf_file:
+    if selected_perf_file and selected_perf_file in saved_perf_files:
         file_path = os.path.join(PERF_DIR, selected_perf_file)
         if os.path.exists(file_path):
             df_perf = pd.read_excel(file_path)
