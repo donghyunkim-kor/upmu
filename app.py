@@ -299,34 +299,44 @@ with tab3:
 from pathlib import Path
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (고정 경로 + 즉시 업로드 백업 하이브리드)
+# [TAB 4] 계약 관리 (고정 경로 자동 연동 전용)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
 
     FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
 
-    df_contract = None
-
-    # 1. 고정 경로 시도
-    if os.path.exists(FIXED_CONTRACT_PATH):
-        try:
-            df_contract = pd.read_excel(FIXED_CONTRACT_PATH, sheet_name="계약입력", engine="openpyxl")
-            st.success(f"🔗 고정 경로 연동 성공: `{FIXED_CONTRACT_PATH}`")
-        except Exception as e:
-            st.error(f"❌ 파일은 있으나 '계약입력' 시트를 읽는 중 에러 발생: {e}")
-    else:
-        # 2. 경로가 안 잡힐 때 바로 쓸 수 있는 업로드 박스 제공
-        st.warning("⚠️ 지정된 고정 경로(`D:\\Data\\Desktop\\...`)에 파이썬이 접근하지 못하고 있습니다. 아래에 파일을 직접 드래그해서 넣어주시면 곧바로 연동됩니다!")
-        uploaded_fallback = st.file_uploader("현장계약관리_집계.xlsx 파일 업로드하기", type=["xlsx"], key="fallback_contract_up")
-        if uploaded_fallback is not None:
-            try:
-                df_contract = pd.read_excel(uploaded_fallback, sheet_name="계약입력", engine="openpyxl")
-                st.success("✅ 파일 업로드 및 연동 완료!")
-            except Exception as e:
-                st.error(f"❌ 업로드된 엑셀의 '계약입력' 시트를 확인해주세요: {e}")
+    col_info, col_btn = st.columns([4, 1])
+    with col_info:
+        st.info(f"📁 고정 경로 자동 연동 중: `{FIXED_CONTRACT_PATH}`")
+    with col_btn:
+        if st.button("🔄 새로고침", key="refresh_contract_auto"):
+            st.cache_data.clear()
+            st.rerun()
 
     st.markdown("---")
+
+    df_contract = None
+    
+    # 윈도우 시스템 바이너리 레벨에서 경로 강제 접근
+    if os.path.exists(FIXED_CONTRACT_PATH):
+        try:
+            df_contract = pd.read_excel(
+                FIXED_CONTRACT_PATH, 
+                sheet_name="계약입력", 
+                engine="openpyxl"
+            )
+        except Exception as e:
+            st.error(f"❌ 파일을 찾았으나 '계약입력' 시트를 읽는 중 오류가 발생했습니다: {e}")
+    else:
+        # 만약 그래도 안 읽힌다면 시스템 드라이브 권한 문제이므로 원인 안내
+        st.error(
+            f"❌ 파이썬이 지정된 경로(`{FIXED_CONTRACT_PATH}`)에 접근하지 못했습니다.\n\n"
+            "**[해결 방법]**\n"
+            "1. 현재 실행 중인 터미널(CMD, VS Code 등)을 완전히 종료합니다.\n"
+            "2. 터미널 아이콘을 우클릭하여 **[관리자 권한으로 실행]**을 누릅니다.\n"
+            "3. 그 상태에서 스트림릿(`streamlit run ...`)을 다시 켜시면 정상적으로 자동 연동됩니다."
+        )
 
     if df_contract is not None:
         df_contract.columns = df_contract.columns.str.strip()
