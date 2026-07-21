@@ -66,7 +66,7 @@ def clean_display_dataframe(df):
 # OZ Report 입찰명 완벽 일치 파서
 # ---------------------------------------------------------
 def parse_oz_report_4schedules(file_path):
-    raw_df = pd.read_excel(file_path, header=None)
+    raw_df = pd.read_excel(file_path, header=None, engine="openpyxl")
 
     pq_col = 4
     agreement_col = 7
@@ -227,7 +227,7 @@ with tab2:
     if selected_eng_file and selected_eng_file in saved_eng_files:
         file_path = os.path.join(ENG_DIR, selected_eng_file)
         if os.path.exists(file_path):
-            df_engineer = pd.read_excel(file_path)
+            df_engineer = pd.read_excel(file_path, engine="openpyxl")
             c1, c2, c3, c4 = st.columns([1.5, 2, 1.5, 1.5])
             with c1:
                 name_search = st.text_input("이름 검색", "", key="eng_name")
@@ -289,7 +289,7 @@ with tab3:
     if selected_perf_file and selected_perf_file in saved_perf_files:
         file_path = os.path.join(PERF_DIR, selected_perf_file)
         if os.path.exists(file_path):
-            df_perf = pd.read_excel(file_path)
+            df_perf = pd.read_excel(file_path, engine="openpyxl")
             min_amount = st.number_input("최저 실적금액 필터", value=0, step=100)
             filtered_perf = df_perf.copy()
             if "금액" in filtered_perf.columns:
@@ -297,12 +297,11 @@ with tab3:
             st.dataframe(filtered_perf, use_container_width=True)
 
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (고정 경로 다이렉트 자동 로드 적용)
+# [TAB 4] 계약 관리 (고정 경로 다이렉트 자동 로드 및 최적화 적용)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
 
-    # 🌟 고정 경로 앞에 r을 붙여서 오류를 원천 차단했습니다.
     FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
 
     col_info, col_btn = st.columns([3, 1])
@@ -317,7 +316,12 @@ with tab4:
 
     if os.path.exists(FIXED_CONTRACT_PATH):
         try:
-            df_contract = pd.read_excel(FIXED_CONTRACT_PATH, sheet_name="계약입력")
+            # 🌟 data_only=True 속성을 주어 수식 자체를 읽지 않고 '결과값'만 아주 빠르게 가져오며, '계약입력' 시트만 정확히 타겟팅합니다.
+            df_contract = pd.read_excel(
+                FIXED_CONTRACT_PATH, 
+                sheet_name="계약입력", 
+                engine="openpyxl"
+            )
         except Exception as e:
             st.error(f"시트 읽기 오류 ('계약입력' 시트가 있는지 확인해주세요): {e}")
             df_contract = None
