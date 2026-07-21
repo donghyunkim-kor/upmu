@@ -296,13 +296,16 @@ with tab3:
                 filtered_perf = filtered_perf[pd.to_numeric(filtered_perf["금액"], errors="coerce").fillna(0) >= min_amount]
             st.dataframe(filtered_perf, use_container_width=True)
 
+from pathlib import Path
+
 # ---------------------------------------------------------
-# [TAB 4] 계약 관리 (에러 캐치 및 디버깅 강화 버전)
+# [TAB 4] 계약 관리 (pathlib을 이용한 강제 절대 경로 접근)
 # ---------------------------------------------------------
 with tab4:
     st.header("🏗️ 현장 계약 및 변경 이력 관리 (계약입력 시트 연동)")
 
-    FIXED_CONTRACT_PATH = r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx"
+    # 🌟 pathlib을 사용하여 윈도우 시스템 경로 객체로 생성
+    FIXED_CONTRACT_PATH = Path(r"D:\Data\Desktop\김동현\업무팀자료\계약관리\현장계약관리_집계.xlsx")
 
     col_info, col_btn = st.columns([3, 1])
     with col_info:
@@ -314,13 +317,14 @@ with tab4:
 
     st.markdown("---")
 
-    if os.path.exists(FIXED_CONTRACT_PATH):
+    # pathlib의 .exists()로 파일 존재 여부 확인
+    if FIXED_CONTRACT_PATH.exists():
         df_contract = None
-        # 🌟 로딩 상태를 명확히 보여주면서 에러를 숨기지 않고 뱉어내도록 수정
         with st.spinner("엑셀 파일을 읽어오는 중입니다..."):
             try:
+                # 🌟 경로 객체를 문자열로 변환하여 read_excel에 전달
                 df_contract = pd.read_excel(
-                    FIXED_CONTRACT_PATH, 
+                    str(FIXED_CONTRACT_PATH), 
                     sheet_name="계약입력", 
                     engine="openpyxl"
                 )
@@ -351,7 +355,6 @@ with tab4:
                         except:
                             share_ratio = 1.0
 
-                    # 🌟 '종류'가 '낙찰' 또는 '총괄'인 행들만 골라서 총공사 계약금액 및 당사 계약금액 합산
                     valid_sum_mask = sub_df["종류"].astype(str).str.contains("낙찰|총괄", na=False)
                     filtered_sum_df = sub_df[valid_sum_mask]
 
@@ -385,7 +388,6 @@ with tab4:
 
                     st.markdown("---")
 
-                    # 🌟 차수 계약의 잔여계약금액(전체계약금액 - 누적기계약금액) 계산 컬럼 추가 로직
                     sub_df_calc = sub_df.copy()
                     if "낙찰(계약)금액" in sub_df_calc.columns:
                         remaining_amounts = []
@@ -405,7 +407,6 @@ with tab4:
                         
                         sub_df_calc["잔여계약금액"] = remaining_amounts
 
-                    # 포맷팅 적용
                     clean_sub_df = clean_display_dataframe(sub_df_calc)
 
                     st.markdown("#### 📋 상세 계약 및 변경 내역 (타임라인)")
@@ -427,7 +428,6 @@ with tab4:
                     actual_cols = [c for c in display_cols if c in clean_sub_df.columns]
                     st.dataframe(clean_sub_df[actual_cols], use_container_width=True)
 
-                    # 차수별 요약 브리핑
                     st.markdown("#### 🔍 차수 및 증감 계약 요약 브리핑")
                     summary_view_cols = [
                         c for c in ["종류", "내용", "계약일(낙찰)", my_col, "잔여계약금액", "특이사항"]
@@ -438,4 +438,4 @@ with tab4:
             else:
                 st.error("엑셀 파일 내에 '계약명' 컬럼이 존재하지 않습니다.")
     else:
-        st.error(f"❌ 지정된 경로에 파일이 존재하지 않습니다. 경로를 확인해 주세요:\n`{FIXED_CONTRACT_PATH}`")
+        st.error(f"❌ 지정된 경로에 파일이 존재하지 않거나 권한이 차단되었습니다:\n`{FIXED_CONTRACT_PATH}`")
